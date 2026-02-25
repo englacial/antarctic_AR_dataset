@@ -2,8 +2,8 @@
 
 Welcome! This repo contains a tutorial notebook showcasing a fully cloud-based workflow for extracting landfalling characteristics and impacts from a catalog of atmospheric river storms in Antarctica, as mentioned in the following AGU25 talks:
 
-+ [A12D-01 Linking Antarctic Atmospheric River Characteristics with Their Landfalling Impacts](https://agu.confex.com/agu/agu25/meetingapp.cgi/Paper/1970828), [slides]()
-+ [IN23A-06 Cloud-based Workflows for Antarctic Atmospheric Rivers: Successes and Challenges](https://agu.confex.com/agu/agu25/meetingapp.cgi/Paper/1971552), [slides]()
++ [A12D-01 Linking Antarctic Atmospheric River Characteristics with Their Landfalling Impacts](https://agu.confex.com/agu/agu25/meetingapp.cgi/Paper/1970828), [slides](https://zenodo.org/records/17926794)
++ [IN23A-06 Cloud-based Workflows for Antarctic Atmospheric Rivers: Successes and Challenges](https://agu.confex.com/agu/agu25/meetingapp.cgi/Paper/1971552), [slides](https://zenodo.org/records/17926811)
 
 ## Background
 
@@ -21,8 +21,9 @@ We implemented this workflow on [CryoCloud](https://cryointhecloud.com/), a clou
 
 If you need to create an account, doing to is very easy! See [here](https://book.cryointhecloud.com/getting-started).
 
-Once you have an account and log in, 
+Once you have an account and log in, follow these steps to start up a server you can use to run through the workflow!
 
+<img width="1065" height="864" alt="cryo_walkthrough" src="https://github.com/user-attachments/assets/c771d5ea-e811-49f9-9722-42f8d2482489" />
 
 ## Repo Contents
 + `environment.yml`: file specifying environment to run this workflow in
