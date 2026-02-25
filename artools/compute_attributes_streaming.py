@@ -97,7 +97,47 @@ def compute_summaries(storm_da, func_vars_dict, cell_areas, data_doi, gatekeeper
             else:
                 summaries.append(func(storm_da, single_var_da, cell_areas))
 
-    return summaries
+    return summaries, missing_days
+    
+@ray.remote
+def compute_chunk_summaries(chunk_lst, func_vars_dict, cell_areas, data_doi, gatekeeper=None, half_hour=False, climatology_ds=False):
+    '''
+    Computes summaries for a list of ARs (called a chunk_lst), and loops through the chunk in sequential fashion. Provides an alternative
+        way of parallelizing the storm value computations: instead of parallelizing over the list of individual storms, we parallelize over
+        chunks of storms, where within each iteration of the parallel loop, we compute quantities sequentially on that chunk.
+
+    Inputs:
+        chunk_lst (pd.DataFrame): a dataframe with a data_array column
+        func_vars_dict (dictionary): a dictionary whose keys are a 2-tuple of strings, where the first
+            string is the name of the variable you'd like to create, and the second is the variable name
+            in the MERRA-2 dataset that you will compute the variable summary on. The value is the actual
+            function of the variable you would like to compute for your AR (mean, max, over AIS, etc.)
+        cell_areas (xarray.DataArray): the DataArray with areas of each grid cell
+        data_doi (string): the doi of the dataset we wish to stream from
+        half_hour (boolean): for some reason, some MERRA-2 datasets give times on the half-hour instead of hour.
+            If you're using such a dataset, set this flag to true to subtract all times by 30 minutes.
+        climatology_ds (xarray.DataArray): if some of the elements of your func_vars_dict involve anomalies,
+            you must include this so anomalies can be computed
+
+    Outputs:
+        summaries_lst (list of lists): a list of lists of the summary quantities, in the order as they appear in func_vars_dict,
+            one list for each storm in the chunk
+    '''
+
+    summaries_lst = []
+    missing_lst = []
+    for index, storm in chunk_lst.iterrows():
+        summaries, missing_days = compute_summaries(storm.data_array, 
+                                      func_vars_dict, 
+                                      cell_areas, 
+                                      data_doi, 
+                                      gatekeeper, 
+                                      half_hour, 
+                                      climatology_ds)
+        summaries_lst.append(summaries)
+        missing_lst.append(missing_days)
+
+    return summaries_lst, missing_lst
 
 @ray.remote
 def compute_precip_summaries(storm_da, cell_areas, agg_func, data_doi, gatekeeper=None):
@@ -158,7 +198,37 @@ def compute_precip_summaries(storm_da, cell_areas, agg_func, data_doi, gatekeepe
     # compute aggregate snowfall
     summaries.append(agg_func(augmented_da, obs_ds['PRECSN'], cell_areas))
     
-    return summaries
+    return summaries, missing_days
 
+@ray.remote
+def compute_precip_chunk_summaries(chunk_lst, cell_areas, agg_func, data_doi, gatekeeper=None):
+    '''
+    The analogous function to compute_chunk_summaries(), but for the precip computations.
+
+    Inputs:
+        chunk_lst (pd.DataFrame): a dataframe with a data_array column
+        cell_areas (xarray.DataArray): the DataArray with the cell areas
+        agg_func (function): the function to aggregate over the spatiotemporal footprint of the AR,
+            usually cumulative
+        data_doi (str): the doi of the MERRA-2 precip dataset
+
+    Outputs:
+        summaries_lst (list of lists): the summary quantities in the order they appear in func_vars_dict,
+            one list per storm
+    '''
+
+    summaries_lst = []
+    missing_lst = []
+    for index, storm in chunk_lst.iterrows():
+        summaries, missing_days = compute_precip_summaries(storm.data_array, 
+                                             cell_areas, 
+                                             agg_func, 
+                                             data_doi, 
+                                             gatekeeper)
+        summaries_lst.append(summaries)
+        missing_lst.append(missing_days)
+
+    return summaries_lst, missing_lst
+        
     
-
+    

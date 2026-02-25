@@ -1,14 +1,16 @@
 '''
-Script with some helper functions that are more generally-purposed and are useful to call up
-    in the other utils scripts.
+Utils file with useful functions for the st-dbscan algorithm.
 
 Jimmy Butler
-November 2025
+October 2025
 '''
 
 import numpy as np
 import pandas as pd
+from sklearn.metrics.pairwise import haversine_distances
 
+# homemade arctan function to make sure that, for a given x and y, the
+# the angle corresponds to the correct half of the unit circle
 def arctan(x, y):
     '''
     Fucntion to find the arctan of y/x. Had to make this function because by default,
@@ -63,3 +65,29 @@ def average_angle(subdf):
 
     return (subdf.name, np.degrees(avg_lat), np.degrees(avg_lon))
 
+
+def retrieve_neighbors(obj, data, eps_space, eps_time):
+    '''
+    Function to find spatiotemporal neighbors of points, for use in the fit_spatiotemporal
+        method of the ST_DBSCAN class.
+
+    Inputs:
+        obj (pandas.DataFrame): a single row of a DataFrame with time, lat, and lon columns;
+            represents one randomly sampled point of an AR at a single time step
+        data (pandas.DataFrame): the rest of the AR points to cluster, with which to find neighbors
+        eps_space (float): neighborhood size in space (angular size)
+        eps_time (float): neighborohod size in time (in hours)
+
+    Outputs:
+        st_neighbors (pandas.DataFrame): a DataFrame of points in 3D space are neighbors with obj
+    '''
+    
+    obj_time = obj['time'].iloc[0]
+    obj_loc = obj[['lat', 'lon']]
+
+    # find neighbors in time
+    time_neighbors = data.loc[np.abs((data['time'] - obj_time).dt.total_seconds()/86400) <= eps_time]
+    # among time neighbors, find space neighbors
+    st_neighbors = time_neighbors.loc[haversine_distances(time_neighbors[['lat', 'lon']], obj_loc) <= eps_space]
+
+    return(st_neighbors)
