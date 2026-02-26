@@ -1,5 +1,6 @@
 import xarray as xr
 import pandas as pd
+import numpy as np
 import matplotlib.pyplot as plt
 
 import matplotlib.path as mpath
@@ -11,6 +12,7 @@ from cartopy.util import add_cyclic_point
 from matplotlib import animation
 import matplotlib
 from matplotlib.cm import prism
+from tqdm import tqdm
 
 from io import BytesIO
 import base64
@@ -42,23 +44,24 @@ def display_catalog(catalog_df, nrows=None):
     else:
         return catalog_df.style.format({'data_array': construct_thumbnail}).format_index(precision=0)
 
-def make_movie(stormtime_df, title):
+def make_movie(stormtime_df, title, save_path):
     '''
-    Function that constructs an animation of ARs in a stormtime version of the AR catalog.
+    Function that constructs an animation of ARs in a stormtime version of the AR catalog
+    and saves it to a specified path with a progress bar.
 
     Inputs
-        stormtime_df (pandas DataFrame): same as above
+        stormtime_df (pd.DataFrame): same as above
         title (string): the title to print on the animation
-
-    Outputs
-        ani (Matplotlib Animation): an animation object, as far as I know it must be saved first in order to view it
+        save_path (string): the file path to save the animation (e.g., 'movie.mp4' or 'movie.gif')
     '''
 
     # define the times of the movie, and mappings between AR labels and colors
     movie_times = pd.date_range(start=stormtime_df.time.min(), end=stormtime_df.time.max(), freq='3h')
     unique_clusters = stormtime_df['label'].unique()
+    
+    # Grab the colormap object instead of the pyplot convenience function
     prism_cmap = plt.get_cmap('prism')
-    color_mapping = {unique_clusters[j]:prism_cmap(j/len(unique_clusters)) for j in range(len(unique_clusters)) }
+    color_mapping = {unique_clusters[j]: prism_cmap(j/len(unique_clusters)) for j in range(len(unique_clusters))}
 
     # plot the jth frame of the movie (need as input to matplotlib animation constructor)
     def plt_time(j):
@@ -103,5 +106,24 @@ def make_movie(stormtime_df, title):
         plt_time(i)
 
     ani = animation.FuncAnimation(fig, update_img, frames=len(movie_times))
+
+    # Save the animation with a tqdm progress bar
+    print(f"Saving animation to {save_path}...")
+
+    filetype = save_path.split('.')[-1]
+
+    if filetype == 'mp4':  
+        with tqdm(total=len(movie_times)) as pbar:
+            ani.save(save_path, writer='ffmpeg', progress_callback=lambda i, n: pbar.update(1))
+
+    elif filetype == 'gif':
+        with tqdm(total=len(movie_times)) as pbar:
+            ani.save(save_path, progress_callback=lambda i, n: pbar.update(1))
+
+    else:
+        raise Exception('Unsupported file extension for animation.')
+    
+    # close the figure so it doesn't accidentally display a static plot output in a Jupyter Notebook
+    plt.close(fig)
 
     return ani
