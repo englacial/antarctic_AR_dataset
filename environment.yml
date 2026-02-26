@@ -7,9 +7,9 @@ dependencies:
   - ipywidgets
   - pip
   - mystmd
+  - ffmpeg
   - numpy
   - cartopy
-  - 
   - pandas
   - matplotlib
   - xarray
