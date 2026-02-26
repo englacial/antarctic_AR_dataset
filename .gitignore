@@ -32,6 +32,12 @@ MANIFEST
 *.manifest
 *.spec
 
+# ignore all output created
+output/
+
+# ignore large catalog files as well
+catalogs/
+
 # Installer logs
 pip-log.txt
 pip-delete-this-directory.txt
