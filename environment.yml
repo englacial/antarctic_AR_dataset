@@ -8,6 +8,8 @@ dependencies:
   - pip
   - mystmd
   - numpy
+  - cartopy
+  - 
   - pandas
   - matplotlib
   - xarray

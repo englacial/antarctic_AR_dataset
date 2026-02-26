@@ -1,6 +1,17 @@
 import xarray as xr
 import pandas as pd
 import matplotlib.pyplot as plt
+
+import matplotlib.path as mpath
+import matplotlib.colors
+import cartopy.crs as ccrs
+import cartopy.feature as cfeature
+from cartopy.util import add_cyclic_point
+
+from matplotlib import animation
+import matplotlib
+from matplotlib.cm import prism
+
 from io import BytesIO
 import base64
 
@@ -46,7 +57,8 @@ def make_movie(stormtime_df, title):
     # define the times of the movie, and mappings between AR labels and colors
     movie_times = pd.date_range(start=stormtime_df.time.min(), end=stormtime_df.time.max(), freq='3h')
     unique_clusters = stormtime_df['label'].unique()
-    color_mapping = {unique_clusters[j]:prism(j/len(unique_clusters)) for j in range(len(unique_clusters)) }
+    prism_cmap = plt.get_cmap('prism')
+    color_mapping = {unique_clusters[j]:prism_cmap(j/len(unique_clusters)) for j in range(len(unique_clusters)) }
 
     # plot the jth frame of the movie (need as input to matplotlib animation constructor)
     def plt_time(j):
