@@ -12,6 +12,7 @@ dependencies:
   - cartopy
   - pandas
   - matplotlib
+  - gh-scoped-creds
   - seaborn
   - xarray
   - netcdf4
