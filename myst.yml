@@ -14,7 +14,7 @@ project:
     - file: notebooks/dataset_construction.ipynb
     - file: notebooks/dataset_explorations.ipynb
     - title: Quality Assurance
-        children:
+      children:
         - file: notebooks/quality_assurance/qa_aggregates.ipynb
         - file: notebooks/quality_assurance/qa_case_studies.ipynb
         - file: notebooks/quality_assurance/qa_flickering_investigations.ipynb
