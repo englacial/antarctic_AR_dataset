@@ -9,6 +9,33 @@ import numpy as np
 import pandas as pd
 import xarray as xr
 
+def relabel_storms(catalog, date_colname):
+    '''
+    Function to give each storm a label of the format 'YYYY_n', where n is the nth storm
+        in the supplied dataframe from that year. Used to create prettier labels from clustering
+        algorithm output, which by default is just the (n-1)th storm identified from 1/1980.
+
+    Inputs:
+        catalog (pandas.DataFrame): contains a column called 'data_array' with binary dataarrays of each storm,
+            and a column with the start date of that storm (in pd.Datetime format)
+        date_colname (str): the name of the column with the start date of each storm
+
+    Outputs:
+        relabelled_catalog (pandas.DataFrame): the catalog, but with the new index
+    '''
+
+    # preprocess labels
+    labels_lst = []
+    for year in landfalling_storms.start_date.dt.year.unique():
+    
+        n_storms = (landfalling_storms.start_date.dt.year == year).sum()
+        year_labels = f'{year}_' + (np.arange(0, n_storms) + 1).astype(str)
+        
+        labels_lst = labels_lst + list(year_labels)
+    
+    landfalling_storms.index = labels_lst
+    landfalling_storms.index.name = 'Label'
+
 def to_stormtime_format(catalog):
     '''
     Helper function which takes in the default catalog format 

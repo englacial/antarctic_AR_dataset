@@ -38,6 +38,9 @@ output/
 # ignore large catalog files as well
 catalogs/
 
+# ignore the input_data
+input_data
+
 # Installer logs
 pip-log.txt
 pip-delete-this-directory.txt
@@ -211,3 +214,6 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+
+# MyST build outputs
+_build

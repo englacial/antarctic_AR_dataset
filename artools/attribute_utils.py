@@ -17,8 +17,8 @@ from .st_dbscan import utils
 def _align_storm_coords(storm_da, reference_da):
     '''
     Helper function to snap a storm DataArray's floating-point coordinates 
-    to perfectly match a reference grid (e.g., area_da or ais_da), 
-    preventing downstream AlignmentErrors from floating point errors.
+        to perfectly match a reference grid (e.g., area_da or ais_da), 
+        preventing downstream AlignmentErrors from floating point errors.
     '''
     clean_lat = reference_da.sel(lat=storm_da.lat, method="nearest").lat
     clean_lon = reference_da.sel(lon=storm_da.lon, method="nearest").lon
@@ -96,27 +96,61 @@ def compute_cumulative_spacetime(ar_da, cell_areas, ais_da=None):
     return cumulative_area
 
 
-def compute_duration(ar_da):
+def compute_duration(ar_da, ais_da=None):
     '''
     Returns the duration of a storm. Note if the storm only occupies one 3 hourly time step, that storm's duration is 3 hours.
+        If ais_da is supplied, compute the duration of the storm over the AIS.
     '''
-    days = (ar_da.time.max() - ar_da.time.min()).values.astype('timedelta64[h]').astype(int) + np.timedelta64(3, 'h')
-    return days
+
+    if ais_da is not None:
+        ar_da = _align_storm_coords(ar_da, ais_da)
+        storm_ais_mask = ais_da.sel(lat=ar_da.lat, lon=ar_da.lon)
+        # find intersection points of AR footprint with AIS mask
+        ar_da_subset = ar_da.where(storm_ais_mask, 0)
+        landfalling_hours = int(ar_da_subset.any(('lat','lon')).sum().values*3) # each time block is 3 hours
+
+    else:
+        landfalling_hours = int(ar_da.any(('lat','lon')).sum().values*3) # each time block is 3 hours
+    
+    return landfalling_hours
 
 
-def add_start_date(ar_da):
+def add_start_date(ar_da, ais_da=None):
     '''
-    Returns the start date of a storm.
+    Returns the first date at which a storm appears. If ais_da is supplied, return the first date
+        it is found over the AIS.
     '''
-    start = ar_da.time.min().values
+
+    if ais_da is not None:
+        ar_da = _align_storm_coords(ar_da, ais_da)
+        storm_ais_mask = ais_da.sel(lat=ar_da.lat, lon=ar_da.lon)
+        # find intersection points of AR footprint with AIS mask
+        ar_da_subset = ar_da.where(storm_ais_mask, 0)
+        
+        start = ar_da_subset.time[ar_da_subset.any(('lat','lon'))].min().values
+
+    else:
+        start = ar_da.time.min().values
+        
     return start
 
 
-def add_end_date(ar_da):
+def add_end_date(ar_da, ais_da=None):
     '''
-    Returns the end date of a storm.
+    Returns the last date a storm exists. If ais_da is supplied, return the last date it existed
+        over the AIS.
     '''
-    end = ar_da.time.max().values
+    if ais_da is not None:
+        ar_da = _align_storm_coords(ar_da, ais_da)
+        storm_ais_mask = ais_da.sel(lat=ar_da.lat, lon=ar_da.lon)
+        # find intersection points of AR footprint with AIS mask
+        ar_da_subset = ar_da.where(storm_ais_mask, 0)
+        
+        end = ar_da_subset.time[ar_da_subset.any(('lat','lon'))].max().values
+
+    else:
+        end = ar_da.time.max().values
+        
     return end
 
 

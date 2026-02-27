@@ -1,0 +1,26 @@
+version: 1
+project:
+  id: 4e8b7eb7-e402-40b4-971a-9f662e62bc9e
+  # title:
+  # description:
+  # keywords: []
+  # authors: []
+  github: https://github.com/jbbutler/antarctic_AR_dataset
+  # To autogenerate a Table of Contents, run "myst init --write-toc"
+  toc:
+    - file: README.md
+    - title: Notebooks
+      children:
+        - file: notebooks/catalog_construction.ipynb
+        - file: notebooks/cmmt_comparison.ipynb
+        - file: notebooks/dataset_construction.ipynb
+        - file: notebooks/dataset_explorations.ipynb
+        - title: Quality Assurance
+          children:
+            - file: notebooks/quality_assurance/qa_aggregates.ipynb
+            - file: notebooks/quality_assurance/qa_case_studies.ipynb
+            - file: notebooks/quality_assurance/qa_flickering_investigations.ipynb
+            - file: notebooks/quality_assurance/qa_sensitivity_testing.ipynb
+    
+site:
+  template: book-theme
