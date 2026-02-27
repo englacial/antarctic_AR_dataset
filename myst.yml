@@ -9,18 +9,16 @@ project:
   # To autogenerate a Table of Contents, run "myst init --write-toc"
   toc:
     - file: README.md
-    - title: Notebooks
-      children:
-        - file: notebooks/catalog_construction.ipynb
-        - file: notebooks/cmmt_comparison.ipynb
-        - file: notebooks/dataset_construction.ipynb
-        - file: notebooks/dataset_explorations.ipynb
-        - title: Quality Assurance
-          children:
-            - file: notebooks/quality_assurance/qa_aggregates.ipynb
-            - file: notebooks/quality_assurance/qa_case_studies.ipynb
-            - file: notebooks/quality_assurance/qa_flickering_investigations.ipynb
-            - file: notebooks/quality_assurance/qa_sensitivity_testing.ipynb
+    - file: notebooks/catalog_construction.ipynb
+    - file: notebooks/cmmt_comparison.ipynb
+    - file: notebooks/dataset_construction.ipynb
+    - file: notebooks/dataset_explorations.ipynb
+    - title: Quality Assurance
+        children:
+        - file: notebooks/quality_assurance/qa_aggregates.ipynb
+        - file: notebooks/quality_assurance/qa_case_studies.ipynb
+        - file: notebooks/quality_assurance/qa_flickering_investigations.ipynb
+        - file: notebooks/quality_assurance/qa_sensitivity_testing.ipynb
     
 site:
   template: book-theme
