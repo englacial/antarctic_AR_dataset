@@ -12,6 +12,7 @@ dependencies:
   - cartopy
   - pandas
   - matplotlib
+  - seaborn
   - xarray
   - netcdf4
   - h5netcdf
