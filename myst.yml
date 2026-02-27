@@ -10,13 +10,13 @@ project:
   toc:
     - file: README.md
     - file: notebooks/catalog_construction.ipynb
-    - file: notebooks/cmmt_comparison.ipynb
     - file: notebooks/dataset_construction.ipynb
     - file: notebooks/dataset_explorations.ipynb
     - title: Quality Assurance
       children:
         - file: notebooks/quality_assurance/qa_aggregates.ipynb
         - file: notebooks/quality_assurance/qa_case_studies.ipynb
+        - file: notebooks/cmmt_comparison.ipynb
         - file: notebooks/quality_assurance/qa_flickering_investigations.ipynb
         - file: notebooks/quality_assurance/qa_sensitivity_testing.ipynb
     
