@@ -12,7 +12,7 @@ from cartopy.util import add_cyclic_point
 from matplotlib import animation
 import matplotlib
 from matplotlib.cm import prism
-from tqdm import tqdm
+from tqdm.auto import tqdm
 
 from io import BytesIO
 import base64

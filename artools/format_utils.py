@@ -8,6 +8,7 @@ October 2025
 import numpy as np
 import pandas as pd
 import xarray as xr
+from tqdm.auto import tqdm
 
 def relabel_storms(catalog, date_colname):
     '''
@@ -36,7 +37,7 @@ def relabel_storms(catalog, date_colname):
     landfalling_storms.index = labels_lst
     landfalling_storms.index.name = 'Label'
 
-def to_stormtime_format(catalog):
+def to_stormtime_format(catalog, show_progress=False):
     '''
     Helper function which takes in the default catalog format 
         (a DataFrame whose rows contain xArray DataArray masks for each storm)
@@ -45,6 +46,7 @@ def to_stormtime_format(catalog):
 
     Inputs
         catalog (pandas.DataFrame): contains a column called 'data_array' with binary dataarrays of each storm
+        show_progress (bool): Optional; if True, displays a progress bar for the outer loop. Defaults to False.
 
     Outputs
         stormtime_df (pandas.DataFrame): DataFrame where a row consists of a particular AR at 
@@ -56,8 +58,11 @@ def to_stormtime_format(catalog):
     lats = []
     lons = []
 
+    # Determine whether to wrap the iterator with tqdm based on show_progress
+    loop_iterable = tqdm(catalog.index, desc="Processing storms") if show_progress else catalog.index
+
     # for every storm
-    for index in catalog.index:
+    for index in loop_iterable:
 
         # grab that storm's times and binary mask
         storm_da = catalog.loc[index].data_array
@@ -70,6 +75,7 @@ def to_stormtime_format(catalog):
             inds = np.argwhere(time_slice.to_numpy() == 1)
             storm_lats = storm_grid_lats[inds[:,0]].values
             storm_lons = storm_grid_lons[inds[:,1]].values
+            
             # add the storm label, time, and lats and lons at that time to requisite lists
             labels.append(index)
             times.append(storm_times[i].values)
