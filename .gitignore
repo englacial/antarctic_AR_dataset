@@ -33,7 +33,7 @@ MANIFEST
 *.spec
 
 # ignore all output created
-output/
+output/data_products/
 
 # ignore large catalog files as well
 catalogs/
