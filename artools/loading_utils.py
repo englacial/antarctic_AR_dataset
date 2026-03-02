@@ -12,8 +12,10 @@ import os
 import numpy as np
 import earthaccess
 import ray
+import pandas as pd
+from huggingface_hub import hf_hub_download
 
-def load_catalogs(dir_path, years=None):
+def load_wille_catalogs(dir_path, years=None):
     '''
     Load up the Wille 2024 catalogs. By default 1980-2022 are loaded up.
         Removes any times for which there are no ARs present, and subsets to
@@ -47,6 +49,28 @@ def load_catalogs(dir_path, years=None):
         lon=catalog_subset.lon.round(5))
 
     return catalog_subset
+
+def load_catalog(fname):
+    '''
+    Function that downloads a catalog from the HuggingFace repository and loads
+        it up into a pandas DataFrame.
+
+    Inputs:
+        fname (string): the name of the catalog you wish to upload from HuggingFace
+
+    Outputs:
+        catalog (pd.DataFrame): the DataFrame catalog
+    '''
+
+    file_path = hf_hub_download(
+        repo_id='butlerj/antarctic_AR_catalogs',
+        filename=fname,
+        repo_type='dataset')
+
+    catalog = pd.read_hdf(file_path)
+
+    return catalog
+    
 
 def load_ais(dir_path, points=False):
     '''
