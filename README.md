@@ -1,4 +1,8 @@
-# Antarctic Atmospheric River (AR) Dataset Tutorial
+# Constructing Datasets of Antarctic AR Events
+
+:::{attention}
+This page is still under construction, currently being adapted from its previous use as a README for a catalog tutorial repo from AGU26.
+:::
 
 Welcome! This repo contains a tutorial notebook showcasing a fully cloud-based workflow for extracting landfalling characteristics and impacts from a catalog of atmospheric river storms in Antarctica, as mentioned in the following AGU25 talks:
 
