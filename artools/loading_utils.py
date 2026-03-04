@@ -15,7 +15,7 @@ import ray
 import pandas as pd
 from huggingface_hub import hf_hub_download
 
-def load_wille_catalogs(dir_path, years=None):
+def load_wille_catalogs(dir_path, years=None, exclude_empty_times=True):
     '''
     Load up the Wille 2024 catalogs. By default 1980-2022 are loaded up.
         Removes any times for which there are no ARs present, and subsets to
@@ -25,28 +25,43 @@ def load_wille_catalogs(dir_path, years=None):
         dir_path (string): path to directory where the catalog netcdf files are stored. Only .nc files stored
             in this directory should be the Wille catalogs.
         years (list): the years you would like to load, if not all of them
+        exclude_empty_times (boolean): whether to remove times for which there are no AR pixels present (default: True)
         
     Outputs:
         catalog_subset (xarray.DataArray): the binary valued DataArray from Wille 2024
     '''
 
     dir_path_obj = Path(dir_path)
-    catalog_paths = str(dir_path_obj/'*.nc')
-    full_catalog = xr.open_mfdataset(catalog_paths)
-
+    
     if years is not None:
-        full_catalog = full_catalog.sel(time=full_catalog.time.dt.year.isin(years))
+        catalog_paths = []
+        for year in years:
+            # uses catalog date signature to grab only the requested years
+            year_files = list(dir_path_obj.glob(f'*{year}0101-{year}1231.nc'))
+            catalog_paths.extend(year_files)
+            
+        if not catalog_paths:
+            raise FileNotFoundError(f"No catalog files found for the years {years} in {dir_path}")
+            
+    else:
+        # fall back to grabbing all .nc files if no years are specified
+        catalog_paths = str(dir_path_obj / '*.nc')
+
+    full_catalog = xr.open_mfdataset(catalog_paths)
 
     # get rid of all non-antarctic points
     catalog_subset = full_catalog.sel(lat=slice(-86, -39)).ar_binary_tag
-    # get rid of all time steps for which there is no AR present
-    is_ar_time = catalog_subset.any(dim = ['lat', 'lon'])
-    catalog_subset = catalog_subset.sel(time=is_ar_time)
+
+    if exclude_empty_times:
+        # get rid of all time steps for which there is no AR present
+        is_ar_time = catalog_subset.any(dim=['lat', 'lon'])
+        catalog_subset = catalog_subset.sel(time=is_ar_time)
 
     # rounding to avoid floating point errors with 0
     catalog_subset = catalog_subset.assign_coords(
         lat=catalog_subset.lat.round(5),
-        lon=catalog_subset.lon.round(5))
+        lon=catalog_subset.lon.round(5)
+    )
 
     return catalog_subset
 
