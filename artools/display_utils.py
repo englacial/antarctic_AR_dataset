@@ -123,6 +123,49 @@ def plot_stormtime_frame(ax, time_pt, stormtime_df, color_mapping=None):
     time_ts = pd.Timestamp(time_pt)
     ax.set_title(f'{time_ts.month}/{time_ts.day}/{time_ts.year}, {time_ts.hour}:00')
 
+def plot_stormtime_grid(start_time, end_time, stormtime_df, freq, ncols):
+    '''
+    Plots side-by-side frames of storm events every 6 hours within a time window.
+
+    Inputs:
+        start_time (str or pd.Timestamp): The beginning of your event (e.g., '2005-01-01 00:00')
+        end_time (str or pd.Timestamp): The end of your event (e.g., '2005-01-02 12:00')
+        stormtime_df (pd.DataFrame): dataframe in stormtime format
+        freq (str): the frequency at which to plot frames
+        ncols (int): number of columns in the subplot grid
+    '''
+    times_to_plot = pd.date_range(start=start_time, end=end_time, freq=freq)
+    
+    n_frames = len(times_to_plot)
+    nrows = int(np.ceil(n_frames / ncols))
+    
+    # generate a consistent color mapping for all subplots so a cluster keeps the same color
+    unique_clusters = stormtime_df['label'].unique()
+    prism_cmap = plt.get_cmap('prism')
+    color_mapping = {unique_clusters[j]: prism_cmap(j/len(unique_clusters)) 
+                     for j in range(len(unique_clusters))}
+
+    # create the figure and axes grid with the stereographic projection
+    fig, axes = plt.subplots(
+        nrows, ncols, 
+        figsize=(5*ncols, 5*nrows),
+        subplot_kw=dict(projection=ccrs.Stereographic(central_longitude=0., central_latitude=-90.))
+    )
+    
+    # flatten axes for easy iteration
+    axes_flat = axes.flatten() if n_frames > 1 else [axes]
+
+    # plot each time point
+    for i, time_pt in enumerate(times_to_plot):
+        plot_stormtime_frame(axes_flat[i], time_pt, stormtime_df, color_mapping=color_mapping)
+    
+    # hide any unused axes in the grid (e.g., if you have 5 plots in a 3x2 grid)
+    for j in range(i + 1, len(axes_flat)):
+        axes_flat[j].axis('off')
+        
+    fig.tight_layout()
+    return fig, axes
+
 
 def plot_eulerian_frame(ax, time_pt, data_array):
     '''
