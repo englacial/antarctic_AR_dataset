@@ -87,22 +87,23 @@ def load_catalog(fname):
     return catalog
     
 
-def load_ais(dir_path, points=False):
+def load_ais(points=False):
     '''
     Load up the AIS mask.
 
     Inputs:
-        dir_path (string): path to directory where AIS mask is stored
         points (boolean): if True, gives a list of coordinate cells that correspond to the AIS.
             By default, loads up the binary valued xarray.DataArray mask.
     Outputs:
         Depends on points, as above.
     '''
 
-    dir_path_obj = Path(dir_path)
-    # Load up the AIS mask
-    mask_path = dir_path_obj/'AIS_Full_basins_Zwally_MERRA2grid_new.nc'
-    full_ais_mask = xr.open_dataset(mask_path).Zwallybasins > 0
+    file_path = hf_hub_download(
+        repo_id='butlerj/antarctic_AR_catalogs',
+        filename='AIS_Full_basins_Zwally_MERRA2grid_new.nc',
+        repo_type='dataset')
+
+    full_ais_mask = xr.open_dataset(file_path).Zwallybasins > 0
     # grab only points in the Southern Ocean area
     ais_mask = full_ais_mask.sel(lat=slice(-86, -39))
 
@@ -121,20 +122,21 @@ def load_ais(dir_path, points=False):
 
     return ais_mask
 
-def load_cell_areas(dir_path):
+def load_cell_areas():
     '''
     Load up the xarray.DataArray with the grid cell areas.
 
-    Inputs:
-        dir_path (string): the path to the directory where the cell areas file is stored.
     Outputs:
         cell_areas (xarray.DataArray): the DataArray in our region of interest with the area of
             each grid cell provided
     '''
 
-    dir_path_obj = Path(dir_path)
-    areas_path = dir_path_obj/'MERRA2_gridarea.nc'
-    cell_areas = xr.open_dataset(areas_path)
+    file_path = hf_hub_download(
+        repo_id='butlerj/antarctic_AR_catalogs',
+        filename='MERRA2_gridarea.nc',
+        repo_type='dataset')
+
+    cell_areas = xr.open_dataset(file_path)
     cell_areas = cell_areas.cell_area
 
     # rounding to avoid floating point errors with 0
