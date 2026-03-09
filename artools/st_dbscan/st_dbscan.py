@@ -64,6 +64,13 @@ class ST_DBSCAN:
             clustering = self.__fit_spatial(np.column_stack((np.radians(storm_lats), np.radians(storm_lons))))
             fixed_time_df = pd.DataFrame({'lats': storm_lats, 'lons': storm_lons, 'cluster': clustering})
 
+            # filter out any spatial noise: if it's noise in the spatial step, it's not going to be an AR
+            fixed_time_df = fixed_time_df[fixed_time_df['cluster'] != -1].copy()
+            
+            # if the dataframe is empty (i.e., no points, or ALL points were noise), skip to next time step
+            if fixed_time_df.empty:
+                continue
+
             # get the average lat-lon of each cluster, according to average_angle function above
             avg_positions = pd.DataFrame(fixed_time_df.groupby('cluster').apply(average_angle, include_groups=False).to_list(), 
                                 columns=['cluster', 'mean_lat', 'mean_lon'])
@@ -85,6 +92,9 @@ class ST_DBSCAN:
             # add this time-specific df into list of dfs
             cluster_infos[i] = cluster_info
 
+        # filter out any None values from skipped time steps before concatenating
+        cluster_infos = [info for info in cluster_infos if info is not None]
+        
         # stitch list of dataframes across time into big dataframe
         cluster_infos_df = pd.concat(cluster_infos, axis=0)
         cluster_infos_df.reset_index(drop=True, inplace=True)
@@ -102,7 +112,7 @@ class ST_DBSCAN:
         # add cluster membership column back to original df
         cluster_infos_df['cluster'] = self.__fit_spatiotemporal(unpacked_df)
 
-        return cluster_infos_df 
+        return cluster_infos_df
 
     def __fit_spatial(self, points):
 
