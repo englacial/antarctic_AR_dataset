@@ -76,7 +76,7 @@ def retrieve_neighbors(obj, data, eps_space, eps_time):
             represents one randomly sampled point of an AR at a single time step
         data (pandas.DataFrame): the rest of the AR points to cluster, with which to find neighbors
         eps_space (float): neighborhood size in space (angular size)
-        eps_time (float): neighborohod size in time (in hours)
+        eps_time (float): neighborohod size in time (in days)
 
     Outputs:
         st_neighbors (pandas.DataFrame): a DataFrame of points in 3D space are neighbors with obj

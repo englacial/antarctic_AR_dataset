@@ -9,14 +9,10 @@ import numpy as np
 import pandas as pd
 import xarray as xr
 
-import sys
-sys.path.append(str(Path(__file__).parents[3]/'packages'))
-
-from st_dbscan.st_dbscan import ST_DBSCAN
-from attribute_utils import is_landfalling
-from loading_utils import load_catalogs
-from loading_utils import load_ais
-from format_utils import construct_da_series
+from artools.st_dbscan import ST_DBSCAN
+from artools.attribute_utils import is_landfalling
+from artools.loading_utils import load_wille_catalogs, load_ais
+from artools.format_utils import construct_da_series
 
 # parsing arguments submitted by user, 
 parser = argparse.ArgumentParser(description="Parsing arguments to run the clustering algorithm.")
@@ -37,7 +33,7 @@ par_dict = {'seed':args.seed,
                      'min_pts': args.minpts}
 
 
-catalog_subset = load_catalogs()
+catalog_subset = load_wille_catalogs('../input_data/wille_ar_catalogs', years=[1980])
 ais_pts = load_ais()
 
 # hyperparameters
