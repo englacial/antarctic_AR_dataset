@@ -1,4 +1,4 @@
- # File to run the clustering algorithm on the Wille 2021 catalog, with a particular set of hyperparameters
+# File to run the clustering algorithm on the Wille 2021 catalog, with a particular set of hyperparameters
 #
 # Jimmy Butler
 # September 2025
