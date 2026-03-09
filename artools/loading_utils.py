@@ -87,21 +87,26 @@ def load_catalog(fname):
     return catalog
     
 
-def load_ais(points=False):
+def load_ais(points=False, load_path=None):
     '''
     Load up the AIS mask.
 
     Inputs:
         points (boolean): if True, gives a list of coordinate cells that correspond to the AIS.
             By default, loads up the binary valued xarray.DataArray mask.
+        load_path (string): where to load up the mask from if downloaded. Otherwise, will
+            take from huggingface
     Outputs:
         Depends on points, as above.
     '''
 
-    file_path = hf_hub_download(
-        repo_id='butlerj/antarctic_AR_catalogs',
-        filename='AIS_Full_basins_Zwally_MERRA2grid_new.nc',
-        repo_type='dataset')
+    if load_path:
+        file_path = load_path + '/AIS_Full_basins_Zwally_MERRA2grid_new.nc'
+    else:
+        file_path = hf_hub_download(
+            repo_id='butlerjorg/antarctic_AR_catalogs',
+            filename='AIS_Full_basins_Zwally_MERRA2grid_new.nc',
+            repo_type='dataset')
 
     full_ais_mask = xr.open_dataset(file_path).Zwallybasins > 0
     # grab only points in the Southern Ocean area

@@ -7,7 +7,7 @@
 #SBATCH -e optimal.err #File to which standard err will be written
 
 source ~/.bashrc
-conda activate antarctic_ars
+conda activate antarctic_ars_dataset
 
 cd ..
 

@@ -33,8 +33,8 @@ par_dict = {'seed':args.seed,
                      'min_pts': args.minpts}
 
 
-catalog_subset = load_wille_catalogs('../input_data/wille_ar_catalogs', years=[1980])
-ais_pts = load_ais()
+catalog_subset = load_wille_catalogs('../input_data/wille_ar_catalogs')
+ais_pts = load_ais(load_path='../input_data/antarctic_masks')
 
 # hyperparameters
 synoptic_scale = 10**3
@@ -60,7 +60,7 @@ obj_subset = obj_subset[obj_subset['cluster'] != -1]
 
 storm_df = construct_da_series(obj_subset)
 # add whether each storm is landfalling
-storm_landfalls = storm_df.apply(is_landfalling)
+storm_landfalls = storm_df.apply(is_landfalling, ais_mask=ais_pts)
 
 storm_df = pd.DataFrame({'data_array':storm_df, 'is_landfalling':storm_landfalls})
 
