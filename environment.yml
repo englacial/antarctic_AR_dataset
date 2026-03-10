@@ -25,4 +25,6 @@ dependencies:
     - earthaccess==0.15.1
     - tqdm
     - jupyterlab_myst
+    - lithops
+    - s3fs
     - -e . # used to install the editable version of artools while in development

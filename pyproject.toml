@@ -28,6 +28,14 @@ dependencies = [
     "earthaccess",
 ]
 
+[project.optional-dependencies]
+cloud = [
+    "lithops",
+    "h5netcdf",
+    "fsspec",
+    "s3fs",
+]
+
 [project.urls]
 "Homepage" = "https://github.com/yourusername/my_package_name"
 "Bug Tracker" = "https://github.com/yourusername/my_package_name/issues"

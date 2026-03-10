@@ -1,0 +1,13 @@
+FROM public.ecr.aws/lambda/python:3.12-arm64
+
+RUN pip install --no-cache-dir \
+    lithops \
+    xarray \
+    h5netcdf \
+    fsspec \
+    s3fs \
+    numpy \
+    pandas \
+    earthaccess
+
+COPY artools/ ${LAMBDA_TASK_ROOT}/artools/
