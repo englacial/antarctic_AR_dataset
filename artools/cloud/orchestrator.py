@@ -12,7 +12,6 @@ This module coordinates the full workflow:
 import base64
 import json
 import logging
-import pickle
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
@@ -25,6 +24,22 @@ from .auth import get_gesdisc_s3_credentials
 from .catalog import build_granule_index, map_storm_to_granules
 
 logger = logging.getLogger(__name__)
+
+
+def _serialize_dataarray(da):
+    """Serialize an xr.DataArray to a JSON-safe dict (no pickle).
+
+    Encodes values as base64 numpy bytes and coordinates as lists,
+    avoiding cross-version pickle compatibility issues.
+    """
+    return {
+        "values_b64": base64.b64encode(np.ascontiguousarray(da.values).tobytes()).decode(),
+        "dtype": str(da.dtype),
+        "shape": list(da.shape),
+        "time": [t.isoformat() for t in pd.DatetimeIndex(da.coords["time"].values)],
+        "lat": da.coords["lat"].values.tolist(),
+        "lon": da.coords["lon"].values.tolist(),
+    }
 
 
 def run_cloud_attributes(
@@ -104,7 +119,7 @@ def run_cloud_attributes(
         total_granules += sum(len(v) for v in urls.values())
         event = {
             "storm_id": int(idx),
-            "storm_mask_b64": base64.b64encode(pickle.dumps(storm_da)).decode(),
+            "storm_mask": _serialize_dataarray(storm_da),
             "granule_urls": urls,
             "s3_credentials": creds,
             "max_resident_timesteps": max_resident_timesteps,

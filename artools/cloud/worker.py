@@ -12,7 +12,6 @@ shared data from the container image, and returns computed attributes.
 import base64
 import logging
 import os
-import pickle
 
 import numpy as np
 import s3fs
@@ -81,9 +80,27 @@ def _load_static_data():
     return _static_data
 
 
+def _deserialize_dataarray(d):
+    """Reconstruct an xr.DataArray from the JSON-safe dict format."""
+    import pandas as pd
+
+    values = np.frombuffer(
+        base64.b64decode(d["values_b64"]), dtype=d["dtype"]
+    ).reshape(d["shape"])
+    return xr.DataArray(
+        values,
+        dims=("time", "lat", "lon"),
+        coords={
+            "time": pd.DatetimeIndex(d["time"]),
+            "lat": np.array(d["lat"], dtype=np.float64),
+            "lon": np.array(d["lon"], dtype=np.float64),
+        },
+    )
+
+
 def lambda_handler(event, context):
     """AWS Lambda entry point."""
-    storm_da = pickle.loads(base64.b64decode(event["storm_mask_b64"]))
+    storm_da = _deserialize_dataarray(event["storm_mask"])
     static = _load_static_data()
 
     payload = {
