@@ -31,9 +31,13 @@ dependencies = [
 [project.optional-dependencies]
 cloud = [
     "lithops",
+    "boto3",
     "h5netcdf",
+    "h5py",
     "fsspec",
     "s3fs",
+    "pyyaml",
+    "tables",
 ]
 
 [project.urls]

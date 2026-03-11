@@ -42,12 +42,20 @@ def _extract_date_from_granule(granule) -> str:
     raise ValueError(f"Could not extract date from granule: {granule}")
 
 
-def _extract_s3_url(granule) -> str:
-    """Extract the S3 URL from an earthaccess granule object."""
-    links = granule.data_links(access="direct")
-    if links:
-        return links[0]
-    # Fallback to any available link
+def _extract_url(granule, direct_s3=True) -> str:
+    """Extract a data URL from an earthaccess granule object.
+
+    Parameters
+    ----------
+    granule : earthaccess granule
+    direct_s3 : bool
+        If True, return S3 URL (for in-region Lambda access).
+        If False, return HTTPS URL (for local/out-of-region access).
+    """
+    if direct_s3:
+        links = granule.data_links(access="direct")
+        if links:
+            return links[0]
     links = granule.data_links()
     if links:
         return links[0]
@@ -58,6 +66,7 @@ def build_granule_index(
     time_range=("1980-01-01", "2022-12-31"),
     collections=None,
     cache_path=None,
+    direct_s3=True,
 ):
     """
     Query earthaccess for all MERRA-2 granules and build a date-indexed catalog.
@@ -110,8 +119,8 @@ def build_granule_index(
         for granule in granules:
             try:
                 date_str = _extract_date_from_granule(granule)
-                s3_url = _extract_s3_url(granule)
-                collection_index[date_str] = s3_url
+                url = _extract_url(granule, direct_s3=direct_s3)
+                collection_index[date_str] = url
             except ValueError as e:
                 logger.warning("Skipping granule: %s", e)
 

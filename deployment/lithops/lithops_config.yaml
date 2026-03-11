@@ -6,12 +6,12 @@ aws:
   region: us-west-2  # Must match NASA DAAC S3 region
 
 aws_lambda:
-  execution_role: arn:aws:iam::ACCOUNT:role/lithops-execution
-  runtime: ar-worker-arm64
-  architecture: arm64
+  execution_role: arn:aws:iam::429435741471:role/lithops-ismip6-executor
+  runtime: ar-worker-x86_64
+  architecture: x86_64
   runtime_memory: 2048   # 2 GB — ensures a full vCPU core
   runtime_timeout: 900   # 15 minutes max
   max_workers: 1500
 
 aws_s3:
-  bucket: antarctic-ar-lithops
+  bucket: lithops-us-west-2-l2ic

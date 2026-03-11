@@ -76,25 +76,38 @@ def _make_s3fs(credentials):
     )
 
 
-def _open_merra2(url, fs, half_hour=False):
+def _open_merra2(url, fs, half_hour=False, session=None):
     """
-    Open a single MERRA-2 granule from S3 as an xarray Dataset.
+    Open a single MERRA-2 granule as an xarray Dataset.
 
     Parameters
     ----------
     url : str
-        S3 URL to the granule.
-    fs : s3fs.S3FileSystem
-        Authenticated S3 filesystem.
+        S3 or HTTPS URL to the granule.
+    fs : s3fs.S3FileSystem or None
+        Authenticated S3 filesystem (for S3 URLs).
     half_hour : bool
         If True, shift time coordinates by -30 minutes.
+    session : requests.Session or None
+        Authenticated earthdata session (for HTTPS URLs).
 
     Returns
     -------
     xr.Dataset
-        Lazily-opened dataset.
     """
-    fileobj = fs.open(url)
+    if url.startswith("s3://"):
+        fileobj = fs.open(url, cache_type="blockcache", block_size=8 * 1024 * 1024)
+    else:
+        # HTTPS URL — download to temp file with authenticated session
+        import tempfile
+        import shutil
+
+        resp = session.get(url, stream=True, timeout=120)
+        resp.raise_for_status()
+        tmp = tempfile.NamedTemporaryFile(suffix=".nc4", delete=False)
+        shutil.copyfileobj(resp.raw, tmp)
+        tmp.close()
+        fileobj = tmp.name
     ds = xr.open_dataset(fileobj, engine="h5netcdf")
 
     # Round coordinates to avoid floating-point mismatch
@@ -179,8 +192,18 @@ def process_storm(storm_payload):
     # Align storm coordinates to reference grid
     storm_da = _align_storm_coords(storm_da, cell_areas)
 
-    # Set up S3 filesystem
-    fs = _make_s3fs(storm_payload["s3_credentials"])
+    # Set up data access — S3 for Lambda, HTTPS session for local testing
+    creds = storm_payload.get("s3_credentials") or {}
+    session = None
+    fs = None
+    if creds.get("accessKeyId"):
+        fs = _make_s3fs(creds)
+    # Check if any URL is HTTPS — if so, need an earthdata session
+    all_urls = [u for urls in storm_payload["granule_urls"].values() for u in urls]
+    if any(u.startswith("https://") for u in all_urls):
+        import earthaccess
+        auth = earthaccess.login()
+        session = auth.get_session()
 
     # Subset static data to storm's spatial extent
     ais_subset = ais_mask.sel(lat=storm_da.lat, lon=storm_da.lon)
@@ -216,7 +239,7 @@ def process_storm(storm_payload):
 
         for url in urls:
             try:
-                ds = _open_merra2(url, fs, half_hour=half_hour)
+                ds = _open_merra2(url, fs, half_hour=half_hour, session=session)
             except Exception as e:
                 logger.warning("Failed to open %s: %s", url, e)
                 continue

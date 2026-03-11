@@ -11,9 +11,7 @@ import xarray as xr
 import os
 import numpy as np
 import earthaccess
-import ray
 import pandas as pd
-from huggingface_hub import hf_hub_download
 
 def load_wille_catalogs(dir_path, years=None, exclude_empty_times=True):
     '''
@@ -77,6 +75,7 @@ def load_catalog(fname):
         catalog (pd.DataFrame): the DataFrame catalog
     '''
 
+    from huggingface_hub import hf_hub_download
     file_path = hf_hub_download(
         repo_id='butlerj/antarctic_AR_catalogs',
         filename=fname,
@@ -103,6 +102,7 @@ def load_ais(points=False, load_path=None):
     if load_path:
         file_path = load_path + '/AIS_Full_basins_Zwally_MERRA2grid_new.nc'
     else:
+        from huggingface_hub import hf_hub_download
         file_path = hf_hub_download(
             repo_id='butlerjorg/antarctic_AR_catalogs',
             filename='AIS_Full_basins_Zwally_MERRA2grid_new.nc',
@@ -127,19 +127,26 @@ def load_ais(points=False, load_path=None):
 
     return ais_mask
 
-def load_cell_areas():
+def load_cell_areas(load_path=None):
     '''
     Load up the xarray.DataArray with the grid cell areas.
 
+    Inputs:
+        load_path (string): where to load up the grid area file from if downloaded.
+            Otherwise, will take from huggingface
     Outputs:
         cell_areas (xarray.DataArray): the DataArray in our region of interest with the area of
             each grid cell provided
     '''
 
-    file_path = hf_hub_download(
-        repo_id='butlerj/antarctic_AR_catalogs',
-        filename='MERRA2_gridarea.nc',
-        repo_type='dataset')
+    if load_path:
+        file_path = load_path + '/MERRA2_gridarea.nc'
+    else:
+        from huggingface_hub import hf_hub_download
+        file_path = hf_hub_download(
+            repo_id='butlerj/antarctic_AR_catalogs',
+            filename='MERRA2_gridarea.nc',
+            repo_type='dataset')
 
     cell_areas = xr.open_dataset(file_path)
     cell_areas = cell_areas.cell_area
@@ -215,6 +222,8 @@ def grab_MERRA2_granules(storm_da, data_doi):
                                             f'{last.year}-{last.month}-{last.day}'))
 
     return granule_lst
+
+import ray
 
 @ray.remote
 class EarthdataGatekeeper:

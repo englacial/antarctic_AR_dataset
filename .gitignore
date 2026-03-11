@@ -42,6 +42,9 @@ output/data_products/
 # ignore large catalog files as well
 catalogs/
 
+# granule cache (large JSON, local-only)
+granule_cache.json
+
 # ignore the input_data
 input_data
 

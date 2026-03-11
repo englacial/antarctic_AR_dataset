@@ -1,25 +1,17 @@
-#!/usr/bin/env python
+#!/usr/bin/env -S uv run --project . --extra cloud
 """
 CLI entry point for cloud-based storm attribute computation.
 
 Usage:
-    # Full run on Lambda (arm64, 2GB, 1500 workers)
-    python run_cloud_attributes.py /path/to/catalog.h5
-
-    # Local test run (no Lambda needed)
-    python run_cloud_attributes.py /path/to/catalog.h5 --local
-
-    # Custom settings
-    python run_cloud_attributes.py /path/to/catalog.h5 \
-        --output /path/to/output.h5 \
-        --max-timesteps 20 \
-        --batch-size 2000 \
-        --granule-cache /path/to/granule_cache.json
+    # Full run on Lambda
+    uv run scripts/run_cloud_attributes.py /path/to/catalog.h5 \
+        --config deployment/lithops/lithops_config.yaml \
+        --static-data /path/to/antarctic_AR_catalogs \
+        --granule-cache granule_cache.json
 """
 
 import argparse
 import logging
-import sys
 
 
 def main():
@@ -43,13 +35,6 @@ def main():
         help="Max timesteps to hold in memory per worker (default: 10).",
     )
     parser.add_argument(
-        "--batch-size",
-        type=int,
-        default=None,
-        help="Process storms in batches (refreshes credentials between). "
-             "Default: all at once.",
-    )
-    parser.add_argument(
         "--granule-cache",
         default=None,
         help="Path to cache the granule index JSON.",
@@ -58,6 +43,18 @@ def main():
         "--config",
         default=None,
         help="Path to lithops_config.yaml override.",
+    )
+    parser.add_argument(
+        "--static-data",
+        default=None,
+        help="Path to local directory with AIS mask and cell area files. "
+             "If not set, downloads from HuggingFace.",
+    )
+    parser.add_argument(
+        "--limit", "-n",
+        type=int,
+        default=None,
+        help="Only process the first N storms (for testing).",
     )
     parser.add_argument(
         "--local",
@@ -91,13 +88,14 @@ def main():
         catalog_path=args.catalog_path,
         lithops_config=lithops_config,
         output_path=args.output_path,
-        batch_size=args.batch_size,
         max_resident_timesteps=args.max_timesteps,
         granule_cache_path=args.granule_cache,
         local_mode=args.local,
+        static_data_path=args.static_data,
+        limit=args.limit,
     )
 
-    print(f"Done. Computed attributes for {len(result)} storms.")
+    print(f"\nDone. Computed attributes for {len(result)} storms.")
     print(f"Output columns: {list(result.columns)}")
 
 
