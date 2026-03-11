@@ -45,6 +45,9 @@ catalogs/
 # granule cache (large JSON, local-only)
 granule_cache.json
 
+# static data copied into build context by deployment/lambda/build.sh
+static_data/
+
 # ignore the input_data
 input_data
 

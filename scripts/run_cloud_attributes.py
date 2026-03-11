@@ -3,11 +3,11 @@
 CLI entry point for cloud-based storm attribute computation.
 
 Usage:
-    # Full run on Lambda
     uv run scripts/run_cloud_attributes.py /path/to/catalog.h5 \
-        --config deployment/lithops/lithops_config.yaml \
-        --static-data /path/to/antarctic_AR_catalogs \
         --granule-cache granule_cache.json
+
+    # Test with a single storm
+    uv run scripts/run_cloud_attributes.py /path/to/catalog.h5 --limit 1
 """
 
 import argparse
@@ -16,17 +16,22 @@ import logging
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Compute storm attributes using Lithops cloud backend.",
+        description="Compute storm attributes using AWS Lambda.",
     )
     parser.add_argument(
         "catalog_path",
-        help="Path to HDF5 storm catalog (e.g., from antarctic_AR_catalogs).",
+        help="Path to HDF5 storm catalog.",
     )
     parser.add_argument(
         "--output", "-o",
         dest="output_path",
         default=None,
         help="Output path for results HDF5. Default: <catalog>_cloud_attributes.h5",
+    )
+    parser.add_argument(
+        "--function-name",
+        default="ar-worker",
+        help="Lambda function name (default: ar-worker).",
     )
     parser.add_argument(
         "--max-timesteps",
@@ -40,26 +45,21 @@ def main():
         help="Path to cache the granule index JSON.",
     )
     parser.add_argument(
-        "--config",
-        default=None,
-        help="Path to lithops_config.yaml override.",
+        "--max-workers",
+        type=int,
+        default=1000,
+        help="Max concurrent Lambda invocations (default: 1000).",
     )
     parser.add_argument(
-        "--static-data",
-        default=None,
-        help="Path to local directory with AIS mask and cell area files. "
-             "If not set, downloads from HuggingFace.",
+        "--region",
+        default="us-west-2",
+        help="AWS region (default: us-west-2).",
     )
     parser.add_argument(
         "--limit", "-n",
         type=int,
         default=None,
         help="Only process the first N storms (for testing).",
-    )
-    parser.add_argument(
-        "--local",
-        action="store_true",
-        help="Run locally using Lithops LocalhostExecutor (for testing).",
     )
     parser.add_argument(
         "--log-level",
@@ -75,24 +75,17 @@ def main():
         format="%(asctime)s %(name)s %(levelname)s: %(message)s",
     )
 
-    # Load lithops config from file if specified
-    lithops_config = None
-    if args.config:
-        import yaml
-        with open(args.config) as f:
-            lithops_config = yaml.safe_load(f)
-
     from artools.cloud.orchestrator import run_cloud_attributes
 
     result = run_cloud_attributes(
         catalog_path=args.catalog_path,
-        lithops_config=lithops_config,
+        function_name=args.function_name,
         output_path=args.output_path,
         max_resident_timesteps=args.max_timesteps,
         granule_cache_path=args.granule_cache,
-        local_mode=args.local,
-        static_data_path=args.static_data,
+        max_workers=args.max_workers,
         limit=args.limit,
+        region=args.region,
     )
 
     print(f"\nDone. Computed attributes for {len(result)} storms.")

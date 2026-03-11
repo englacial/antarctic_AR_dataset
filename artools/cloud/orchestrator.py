@@ -1,91 +1,41 @@
 """
-Orchestrator for cloud-based storm attribute computation via Lithops.
+Orchestrator for cloud-based storm attribute computation via AWS Lambda.
 
 This module coordinates the full workflow:
   1. Load storm catalog
   2. Build/load granule index (earthaccess, cached)
-  3. Load static data (AIS mask, cell areas, climatology)
-  4. Map storms to granule URLs
-  5. Dispatch workers via Lithops
-  6. Collect results and save
+  3. Get temporary S3 credentials for MERRA-2 access
+  4. Dispatch one Lambda invocation per storm
+  5. Collect results and save
 """
 
+import base64
+import json
 import logging
+import pickle
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
-import xarray as xr
 
-from ..loading_utils import load_ais, load_cell_areas
-from .aggregation_registry import AGGREGATION_SPECS, MERRA2_COLLECTIONS
+from .aggregation_registry import AGGREGATION_SPECS
 from .auth import get_gesdisc_s3_credentials
 from .catalog import build_granule_index, map_storm_to_granules
 
 logger = logging.getLogger(__name__)
 
 
-def _load_climatology(granule_index, s3_credentials=None):
-    """
-    Load the MERRA-2 monthly climatology dataset.
-
-    This is needed for anomaly computations. The climatology is loaded once
-    and distributed to all workers as shared data.
-
-    Parameters
-    ----------
-    granule_index : dict
-        The granule index (unused here, but available for future use).
-    s3_credentials : dict, optional
-        S3 credentials for direct access. If None, uses earthaccess.
-
-    Returns
-    -------
-    xr.Dataset or None
-        Monthly climatology dataset, or None if unavailable.
-    """
-    import earthaccess
-
-    try:
-        earthaccess.login()
-        doi = MERRA2_COLLECTIONS["climatology"]["doi"]
-        granules = earthaccess.search_data(
-            doi=doi,
-            temporal=("1980-01-01", "2022-12-31"),
-        )
-        if not granules:
-            logger.warning("No climatology granules found")
-            return None
-
-        pointers = earthaccess.open(granules, show_progress=False)
-        datasets = [
-            xr.open_dataset(p, engine="h5netcdf").sel(lat=slice(-86, -39))
-            for p in pointers
-        ]
-        ds = xr.concat(datasets, dim="time")
-        ds = ds.assign_coords(
-            lat=ds.lat.round(5),
-            lon=ds.lon.round(5),
-        )
-        # Compute the monthly climatology (average over years per month)
-        climatology = ds.groupby("time.month").mean()
-        return climatology
-    except Exception as e:
-        logger.warning("Failed to load climatology: %s", e)
-        return None
-
-
 def run_cloud_attributes(
     catalog_path,
-    lithops_config=None,
+    function_name="ar-worker",
     output_path=None,
     max_resident_timesteps=10,
     granule_cache_path=None,
-    aggregation_specs=None,
-    local_mode=False,
-    static_data_path=None,
+    max_workers=1000,
     limit=None,
+    region="us-west-2",
 ):
     """
     Main entry point for cloud-based storm attribute computation.
@@ -93,30 +43,28 @@ def run_cloud_attributes(
     Parameters
     ----------
     catalog_path : str or Path
-        Path to HDF5 storm catalog (e.g., from antarctic_AR_catalogs).
-    lithops_config : dict, optional
-        Lithops configuration override. If None, uses default lithops config.
+        Path to HDF5 storm catalog.
+    function_name : str
+        Lambda function name. Default "ar-worker".
     output_path : str or Path, optional
-        Where to save results. Defaults to catalog_path with '_cloud_attributes' suffix.
+        Where to save results. Defaults to <catalog>_cloud_attributes.h5.
     max_resident_timesteps : int
-        Max number of timesteps to hold in memory simultaneously per worker.
-        Higher values increase throughput; lower values reduce memory. Default 10.
+        Max timesteps to hold in memory per worker. Default 10.
     granule_cache_path : str or Path, optional
-        Path to cache the granule index JSON. Avoids re-querying earthaccess.
-    aggregation_specs : list of AggregationSpec, optional
-        Aggregation specs to compute. Defaults to AGGREGATION_SPECS.
-    local_mode : bool
-        If True, use Lithops LocalhostExecutor for testing. Default False.
-    static_data_path : str or Path, optional
-        Local directory containing AIS mask and cell area files.
-        If None, downloads from HuggingFace.
+        Path to cache the granule index JSON.
+    max_workers : int
+        Max concurrent Lambda invocations. Default 1000.
+    limit : int, optional
+        Only process the first N storms (for testing).
+    region : str
+        AWS region. Default "us-west-2".
 
     Returns
     -------
     pd.DataFrame
         Storm catalog with computed attribute columns appended.
     """
-    import lithops
+    import boto3
 
     t_start = time.time()
 
@@ -125,8 +73,6 @@ def run_cloud_attributes(
         output_path = catalog_path.with_name(
             catalog_path.stem + "_cloud_attributes.h5"
         )
-    if aggregation_specs is None:
-        aggregation_specs = AGGREGATION_SPECS
     if granule_cache_path is None:
         granule_cache_path = catalog_path.parent / "granule_cache.json"
 
@@ -143,126 +89,155 @@ def run_cloud_attributes(
     granule_index = build_granule_index(cache_path=granule_cache_path)
     logger.info("Granule index ready (%.1fs)", time.time() - t0)
 
-    # 3. Load static data — must .compute() so data is in-memory for serialization
-    t0 = time.time()
-    logger.info("Loading static data (AIS mask, cell areas)...")
-    ais_mask = load_ais(load_path=static_data_path).compute()
-    cell_areas = load_cell_areas(load_path=static_data_path).compute()
+    # 3. Get temporary S3 credentials for MERRA-2 access
+    logger.info("Fetching S3 credentials...")
+    creds = get_gesdisc_s3_credentials()
 
-    logger.info("Loading climatology...")
-    climatology = _load_climatology(granule_index)
-    logger.info("Static data ready (%.1fs)", time.time() - t0)
-
-    # 4. Build per-storm payloads
+    # 4. Build per-storm events
     t0 = time.time()
     logger.info("Building per-storm payloads...")
-    payloads = []
+    events = []
     total_granules = 0
     for idx, row in storms.iterrows():
         storm_da = row.data_array
         urls = map_storm_to_granules(storm_da, granule_index)
-        n_granules = sum(len(v) for v in urls.values())
-        total_granules += n_granules
-        payloads.append({
-            "storm_payload": {
-                "storm_id": idx,
-                "storm_mask": storm_da,
-                "granule_urls": urls,
-                "aggregation_specs": aggregation_specs,
-                "max_resident_timesteps": max_resident_timesteps,
-            }
-        })
+        total_granules += sum(len(v) for v in urls.values())
+        event = {
+            "storm_id": int(idx),
+            "storm_mask_b64": base64.b64encode(pickle.dumps(storm_da)).decode(),
+            "granule_urls": urls,
+            "s3_credentials": creds,
+            "max_resident_timesteps": max_resident_timesteps,
+        }
+        events.append((idx, event))
     logger.info(
-        "Built %d payloads (%d total granules, %.1f avg per storm) in %.1fs",
-        len(payloads), total_granules, total_granules / len(payloads),
+        "Built %d payloads (%d total granules, %.1f avg) in %.1fs",
+        len(events), total_granules, total_granules / len(events),
         time.time() - t0,
     )
 
-    # 5. Dispatch via Lithops
-    if local_mode:
-        fexec = lithops.LocalhostExecutor(config=lithops_config)
-    else:
-        fexec = lithops.FunctionExecutor(config=lithops_config)
+    # 5. Dispatch via Lambda
+    from botocore.config import Config as BotoConfig
+    boto_config = BotoConfig(
+        max_pool_connections=max_workers,
+        read_timeout=900,  # match Lambda's max timeout
+    )
+    lambda_client = boto3.client("lambda", region_name=region, config=boto_config)
+    logger.info(
+        "Dispatching %d storms to Lambda (max %d concurrent)...",
+        len(events), max_workers,
+    )
 
-    from .worker import process_storm
+    results = {}
+    errors = []
+    billed_durations_ms = []
 
-    # Shared data: static arrays + S3 credentials
-    logger.info("Fetching S3 credentials...")
-    creds = get_gesdisc_s3_credentials()
-    shared_data = {
-        "ais_mask": ais_mask,
-        "cell_areas": cell_areas,
-        "climatology": climatology,
-        "s3_credentials": creds,
-    }
+    def invoke_one(idx, event):
+        response = lambda_client.invoke(
+            FunctionName=function_name,
+            InvocationType="RequestResponse",
+            LogType="Tail",
+            Payload=json.dumps(event).encode(),
+        )
+        payload = json.loads(response["Payload"].read())
+        if "FunctionError" in response:
+            raise RuntimeError(
+                f"Storm {idx}: {payload.get('errorMessage', payload)}"
+            )
 
-    for p in payloads:
-        p["storm_payload"].update(shared_data)
+        # Parse billed duration from Lambda log tail
+        billed_ms = _parse_billed_duration(response.get("LogResult", ""))
+        return idx, payload, billed_ms
 
-    logger.info("Dispatching %d storms via Lithops...", len(payloads))
-    futures = fexec.map(process_storm, payloads)
-    results = fexec.get_result()
+    with ThreadPoolExecutor(max_workers=max_workers) as pool:
+        futures = {
+            pool.submit(invoke_one, idx, event): idx
+            for idx, event in events
+        }
+        logger.info("All %d invocations submitted.", len(futures))
 
-    _log_execution_stats(futures, len(payloads), t_start)
+        completed = 0
+        for future in as_completed(futures):
+            completed += 1
+            try:
+                idx, result, billed_ms = future.result()
+                results[idx] = result
+                if billed_ms is not None:
+                    billed_durations_ms.append(billed_ms)
+            except Exception as e:
+                errors.append(str(e))
+                logger.error("Error: %s", e)
 
-    # 6. Assemble output DataFrame
+            if completed % 100 == 0 or completed == len(events):
+                elapsed = time.time() - t_start
+                logger.info(
+                    "  Progress: %d/%d storms (%.1fs, %.1f storms/s)",
+                    completed, len(events), elapsed, completed / elapsed,
+                )
+
+    if errors:
+        logger.warning("%d storms failed", len(errors))
+
+    # 6. Assemble output
     logger.info("Assembling results...")
-    results_df = pd.DataFrame(results, index=storms.index)
+    results_df = pd.DataFrame.from_dict(results, orient="index")
+    results_df.index = results_df.index.astype(storms.index.dtype)
     output = pd.concat([storms, results_df], axis=1)
 
     # 7. Save
     logger.info("Saving results to %s", output_path)
     output.to_hdf(str(output_path), key="catalog")
 
+    # 8. Stats
     t_total = time.time() - t_start
-    logger.info(
-        "=== COMPLETE === %d storms processed in %.1fs wall time (%.2f storms/s)",
-        len(storms), t_total, len(storms) / t_total,
-    )
+    _log_stats(len(results), len(storms), t_total, billed_durations_ms,
+               memory_mb=2048)
 
     return output
 
 
-def _log_execution_stats(futures, n_storms, t_run_start):
-    """Log comprehensive timing, throughput, and cost stats from Lithops futures."""
-    wall = time.time() - t_run_start
+def _parse_billed_duration(log_result_b64):
+    """Extract billed duration in ms from Lambda's base64-encoded log tail."""
+    import re
+
+    if not log_result_b64:
+        return None
+    try:
+        log_text = base64.b64decode(log_result_b64).decode("utf-8", errors="replace")
+        match = re.search(r"Billed Duration: (\d+) ms", log_text)
+        if match:
+            return int(match.group(1))
+    except Exception:
+        pass
+    return None
+
+
+def _log_stats(n_success, n_total, wall_time, billed_durations_ms, memory_mb):
+    """Log execution stats and cost estimate."""
     logger.info("--- Execution Stats ---")
-    logger.info("  Total wall time: %.1fs", wall)
-    logger.info("  Storms processed: %d", n_storms)
-    logger.info("  Throughput: %.2f storms/s", n_storms / wall if wall else 0)
+    logger.info("  Wall time: %.1fs", wall_time)
+    logger.info("  Storms: %d/%d succeeded", n_success, n_total)
+    if wall_time > 0:
+        logger.info("  Throughput: %.2f storms/s", n_success / wall_time)
 
-    # Extract per-worker stats from futures
-    worker_times = []
-    worker_exec_times = []
-    for f in futures:
-        s = getattr(f, "stats", {})
-        if "worker_func_exec_time" in s:
-            worker_times.append(s["worker_func_exec_time"])
-        if "worker_exec_time" in s:
-            worker_exec_times.append(s["worker_exec_time"])
-
-    if not worker_times:
+    if not billed_durations_ms:
         return
 
-    agg_compute = sum(worker_times)
-
-    logger.info("  Aggregate compute time: %.1fs", agg_compute)
+    durations = np.array(billed_durations_ms) / 1000.0  # to seconds
     logger.info(
-        "  Worker func time: avg=%.1fs, min=%.1fs, max=%.1fs",
-        np.mean(worker_times), min(worker_times), max(worker_times),
+        "  Billed duration: avg=%.1fs, min=%.1fs, max=%.1fs, total=%.0fs",
+        np.mean(durations), np.min(durations), np.max(durations),
+        np.sum(durations),
     )
-    if worker_exec_times:
-        logger.info(
-            "  Worker total time (incl. overhead): avg=%.1fs, max=%.1fs",
-            np.mean(worker_exec_times), max(worker_exec_times),
-        )
 
-    # Cost estimate: Lambda pricing is $0.0000166667 per GB-second
-    # worker_exec_time is the billed duration (includes init overhead)
-    billed_seconds = sum(worker_exec_times) if worker_exec_times else agg_compute
-    gb_seconds = billed_seconds * 2.0  # 2048 MB = 2 GB
+    # Lambda pricing: $0.0000166667 per GB-second
+    gb_seconds = np.sum(durations) * (memory_mb / 1024.0)
     cost_usd = gb_seconds * 0.0000166667
+    # Request pricing: $0.20 per 1M requests
+    request_cost = len(billed_durations_ms) * 0.0000002
+    total_cost = cost_usd + request_cost
+
     logger.info(
-        "  Estimated Lambda cost: $%.4f (%.1f GB-seconds @ 2GB)",
-        cost_usd, gb_seconds,
+        "  Estimated cost: $%.4f (%.1f GB-s compute + $%.4f requests)",
+        total_cost, gb_seconds, request_cost,
     )

@@ -1,0 +1,16 @@
+FROM public.ecr.aws/lambda/python:3.13-arm64
+
+RUN pip install --no-cache-dir \
+    xarray \
+    h5netcdf \
+    h5py \
+    fsspec \
+    s3fs \
+    numpy \
+    pandas \
+    earthaccess
+
+COPY artools/ ${LAMBDA_TASK_ROOT}/artools/
+COPY static_data/ ${LAMBDA_TASK_ROOT}/static_data/
+
+CMD ["artools.cloud.worker.lambda_handler"]

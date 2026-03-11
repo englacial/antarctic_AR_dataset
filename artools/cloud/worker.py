@@ -1,23 +1,109 @@
 """
-Lithops worker function for processing a single storm.
+AWS Lambda worker for processing a single storm.
 
-This module contains the function that runs on each Lambda invocation.
-It receives a storm's binary mask, MERRA-2 granule URLs, S3 credentials,
-and shared static data, then computes all summary statistics and returns
-them as a dict.
+This module contains the Lambda handler and the core processing function.
+Static data (AIS mask, cell areas, climatology) is loaded from disk at
+cold start and cached for subsequent invocations.
+
+The handler receives a storm's binary mask and granule URLs, loads
+shared data from the container image, and returns computed attributes.
 """
 
+import base64
 import logging
+import os
+import pickle
 
 import numpy as np
 import s3fs
 import xarray as xr
 
 from .accumulators import TEMPORAL_REDUCERS
-from .aggregation_registry import MERRA2_COLLECTIONS
+from .aggregation_registry import AGGREGATION_SPECS, MERRA2_COLLECTIONS
 from .spatial_functions import SPATIAL_FUNCTIONS, _apply_mask
 
 logger = logging.getLogger(__name__)
+
+def _default_static_data_dir():
+    """Return the static data directory, checking both container and layer paths."""
+    # Layer deployment: files are extracted to /opt/
+    layer_path = "/opt/static_data"
+    # Container deployment: files are in the task root
+    container_path = "/var/task/static_data"
+    if os.path.isdir(layer_path):
+        return layer_path
+    return container_path
+
+STATIC_DATA_DIR = os.environ.get("STATIC_DATA_DIR") or _default_static_data_dir()
+
+# Module-level cache for static data (persists across warm Lambda invocations)
+_static_data = {}
+
+
+def _load_static_data():
+    """Load static data from disk on first invocation (cold start)."""
+    if _static_data:
+        return _static_data
+
+    logger.info("Cold start: loading static data from %s", STATIC_DATA_DIR)
+
+    # AIS mask — boolean mask of Antarctic Ice Sheet grid cells
+    ais_ds = xr.open_dataset(
+        os.path.join(STATIC_DATA_DIR, "AIS_Full_basins_Zwally_MERRA2grid_new.nc"),
+        engine="h5netcdf",
+    )
+    ais_mask = (ais_ds.Zwallybasins > 0).sel(lat=slice(-86, -39))
+    ais_mask = ais_mask.assign_coords(
+        lat=ais_mask.lat.round(5), lon=ais_mask.lon.round(5)
+    ).load()
+
+    # Cell areas — area in m² of each MERRA-2 grid cell
+    areas_ds = xr.open_dataset(
+        os.path.join(STATIC_DATA_DIR, "MERRA2_gridarea.nc"),
+        engine="h5netcdf",
+    )
+    cell_areas = areas_ds.cell_area
+    cell_areas = cell_areas.assign_coords(
+        lat=cell_areas.lat.round(5), lon=cell_areas.lon.round(5)
+    ).load()
+
+    # Monthly climatology for anomaly computations
+    climatology = xr.open_dataset(
+        os.path.join(STATIC_DATA_DIR, "MERRA2_monthly_climatology.nc"),
+        engine="h5netcdf",
+    ).load()
+
+    _static_data["ais_mask"] = ais_mask
+    _static_data["cell_areas"] = cell_areas
+    _static_data["climatology"] = climatology
+
+    logger.info("Static data loaded")
+    return _static_data
+
+
+def lambda_handler(event, context):
+    """AWS Lambda entry point."""
+    storm_da = pickle.loads(base64.b64decode(event["storm_mask_b64"]))
+    static = _load_static_data()
+
+    payload = {
+        "storm_mask": storm_da,
+        "ais_mask": static["ais_mask"],
+        "cell_areas": static["cell_areas"],
+        "climatology": static["climatology"],
+        "granule_urls": event["granule_urls"],
+        "s3_credentials": event.get("s3_credentials", {}),
+        "aggregation_specs": AGGREGATION_SPECS,
+        "max_resident_timesteps": event.get("max_resident_timesteps", 10),
+    }
+
+    result = process_storm(payload)
+
+    # Convert numpy types to JSON-serializable Python types
+    return {
+        k: float(v) if v is not None else None
+        for k, v in result.items()
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -96,7 +182,7 @@ def _open_merra2(url, fs, half_hour=False, session=None):
     xr.Dataset
     """
     if url.startswith("s3://"):
-        fileobj = fs.open(url, cache_type="blockcache", block_size=8 * 1024 * 1024)
+        fileobj = fs.open(url, cache_type="blockcache", block_size=1 * 1024 * 1024)
     else:
         # HTTPS URL — download to temp file with authenticated session
         import tempfile
@@ -162,7 +248,7 @@ def _get_precip_times(ds, augmented_da):
 
 def process_storm(storm_payload):
     """
-    Lithops worker function. Processes a single storm and returns summary statistics.
+    Process a single storm and return summary statistics.
 
     Parameters
     ----------
@@ -173,7 +259,7 @@ def process_storm(storm_payload):
         - s3_credentials: {accessKeyId, secretAccessKey, sessionToken}
         - ais_mask: xr.DataArray — AIS binary mask
         - cell_areas: xr.DataArray — grid cell areas
-        - climatology: xr.Dataset — monthly climatology means
+        - climatology: xr.Dataset — precomputed monthly climatology
         - aggregation_specs: list of AggregationSpec
         - max_resident_timesteps: int — batch size for timestep loading
 
@@ -252,31 +338,33 @@ def process_storm(storm_payload):
                 for batch_start in range(0, len(timesteps), max_ts):
                     batch_times = timesteps[batch_start : batch_start + max_ts]
 
-                    # Pre-load variables for this batch
+                    # Pre-load all needed variables in a single .compute()
+                    needed_vars = list({s.variable for s in regular_specs})
+                    try:
+                        batch_ds = ds[needed_vars].sel(
+                            lat=storm_da.lat,
+                            lon=storm_da.lon,
+                            time=batch_times,
+                        ).compute()
+                    except Exception as e:
+                        logger.warning(
+                            "Failed to load variables from %s: %s", url, e,
+                        )
+                        batch_ds = None
+
+                    # Derive raw and anomaly versions from the loaded batch
                     loaded_vars = {}
-                    for spec in regular_specs:
-                        var_key = (spec.variable, spec.is_anomaly)
-                        if var_key not in loaded_vars:
-                            try:
-                                var_da = ds[spec.variable].sel(
-                                    lat=storm_da.lat,
-                                    lon=storm_da.lon,
-                                    time=batch_times,
-                                )
-                                var_da = var_da.compute()
-
-                                if spec.is_anomaly and climatology is not None:
-                                    clim_var = climatology[spec.variable]
-                                    var_da = var_da.groupby("time.month") - clim_var
-                                    var_da = var_da.drop_vars("month")
-
-                                loaded_vars[var_key] = var_da
-                            except Exception as e:
-                                logger.warning(
-                                    "Failed to load %s from %s: %s",
-                                    spec.variable, url, e,
-                                )
-                                loaded_vars[var_key] = None
+                    if batch_ds is not None:
+                        for spec in regular_specs:
+                            var_key = (spec.variable, spec.is_anomaly)
+                            if var_key in loaded_vars:
+                                continue
+                            var_da = batch_ds[spec.variable]
+                            if spec.is_anomaly and climatology is not None:
+                                clim_var = climatology[spec.variable]
+                                var_da = var_da.groupby("time.month") - clim_var
+                                var_da = var_da.drop_vars("month")
+                            loaded_vars[var_key] = var_da
 
                     # Compute spatial aggregations per timestep
                     for t in batch_times:
