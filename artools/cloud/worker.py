@@ -318,6 +318,9 @@ def process_storm(storm_payload):
     # Build augmented mask for precipitation (24h lookahead)
     augmented_da = _augment_storm_da(storm_da)
 
+    # Track total bytes loaded from remote granules
+    bytes_read = 0
+
     # Initialize accumulators for each spec
     accumulators = {}
     for spec in specs:
@@ -363,6 +366,7 @@ def process_storm(storm_payload):
                             lon=storm_da.lon,
                             time=batch_times,
                         ).compute()
+                        bytes_read += batch_ds.nbytes
                     except Exception as e:
                         logger.warning(
                             "Failed to load variables from %s: %s", url, e,
@@ -415,7 +419,7 @@ def process_storm(storm_payload):
 
             # --- Process precipitation specs ---
             if precip_specs:
-                _process_precip_from_granule(
+                bytes_read += _process_precip_from_granule(
                     ds, precip_specs, augmented_da, ais_subset,
                     areas_subset, accumulators, half_hour,
                 )
@@ -423,7 +427,9 @@ def process_storm(storm_payload):
             # Free file memory
             del ds
 
-    return {name: acc.finalize() for name, acc in accumulators.items()}
+    result = {name: acc.finalize() for name, acc in accumulators.items()}
+    result["_bytes_read"] = bytes_read
+    return result
 
 
 def _process_precip_from_granule(
@@ -444,12 +450,12 @@ def _process_precip_from_granule(
     # Check which precip vars are in this dataset
     available_vars = [v for v in precip_vars if v in ds.data_vars]
     if not available_vars:
-        return
+        return 0
 
     # Get overlapping times with augmented mask
     timesteps = _get_precip_times(ds, augmented_da)
     if len(timesteps) == 0:
-        return
+        return 0
 
     try:
         # Load precip variables, subset spatially
@@ -465,9 +471,10 @@ def _process_precip_from_granule(
             lon=precip_ds.lon.round(5),
         )
         precip_ds = precip_ds.compute()
+        precip_bytes = precip_ds.nbytes
     except Exception as e:
         logger.warning("Failed to process precip: %s", e)
-        return
+        return 0
 
     # Compute derived variables
     if "PRECCU" in precip_ds and "PRECLS" in precip_ds:
@@ -491,3 +498,5 @@ def _process_precip_from_granule(
             spatial_func = SPATIAL_FUNCTIONS[spec.spatial_func]
             value = spatial_func(var_t, combined_mask, areas_subset)
             accumulators[spec.output_name].update(value)
+
+    return precip_bytes

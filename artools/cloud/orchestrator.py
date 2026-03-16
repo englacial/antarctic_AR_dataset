@@ -146,6 +146,7 @@ def run_cloud_attributes(
     results = {}
     errors = []
     billed_durations_ms = []
+    bytes_read_per_storm = []
 
     def invoke_one(idx, event):
         response = lambda_client.invoke(
@@ -176,9 +177,12 @@ def run_cloud_attributes(
             completed += 1
             try:
                 idx, result, billed_ms = future.result()
+                storm_bytes = result.pop("_bytes_read", None)
                 results[idx] = result
                 if billed_ms is not None:
                     billed_durations_ms.append(billed_ms)
+                if storm_bytes is not None:
+                    bytes_read_per_storm.append(storm_bytes)
             except Exception as e:
                 errors.append(str(e))
                 logger.error("Error: %s", e)
@@ -206,7 +210,7 @@ def run_cloud_attributes(
     # 8. Stats
     t_total = time.time() - t_start
     _log_stats(len(results), len(storms), t_total, billed_durations_ms,
-               memory_mb=2048)
+               bytes_read_per_storm, memory_mb=2048)
 
     return output
 
@@ -227,13 +231,23 @@ def _parse_billed_duration(log_result_b64):
     return None
 
 
-def _log_stats(n_success, n_total, wall_time, billed_durations_ms, memory_mb):
+def _log_stats(n_success, n_total, wall_time, billed_durations_ms,
+               bytes_read_per_storm, memory_mb):
     """Log execution stats and cost estimate."""
     logger.info("--- Execution Stats ---")
     logger.info("  Wall time: %.1fs", wall_time)
     logger.info("  Storms: %d/%d succeeded", n_success, n_total)
     if wall_time > 0:
         logger.info("  Throughput: %.2f storms/s", n_success / wall_time)
+
+    if bytes_read_per_storm:
+        total_bytes = np.sum(bytes_read_per_storm)
+        total_gb = total_bytes / (1024 ** 3)
+        avg_mb = np.mean(bytes_read_per_storm) / (1024 ** 2)
+        logger.info(
+            "  Data read: %.2f GB total (%.1f MB avg per storm)",
+            total_gb, avg_mb,
+        )
 
     if not billed_durations_ms:
         return
