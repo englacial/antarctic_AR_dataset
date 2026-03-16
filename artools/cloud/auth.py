@@ -2,7 +2,7 @@
 Orchestrator authentication helper for NASA Earthdata S3 access.
 
 Call get_gesdisc_s3_credentials() ONCE in the orchestrator before dispatching
-Lithops workers. Pass the returned credentials dict to each worker invocation.
+Lambda workers. Pass the returned credentials dict to each worker invocation.
 
 Credentials are valid for approximately 1 hour.
 """
